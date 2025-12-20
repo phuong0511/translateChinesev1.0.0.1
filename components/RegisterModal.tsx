@@ -33,7 +33,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({
     setError(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
@@ -76,7 +76,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({
     }
 
     try {
-      authService.register(formData.email, formData.name, formData.password);
+      await authService.register(formData.email, formData.name, formData.password);
       onRegisterSuccess();
       onClose();
     } catch (err: any) {

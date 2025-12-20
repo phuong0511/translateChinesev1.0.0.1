@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_INSTRUCTION } from "../constants";
 
 // Initialize Gemini API
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 /**
  * Unified function for both Translation and Analysis.
@@ -43,7 +43,7 @@ export const translateText = async (
       return response.text || "";
 
     } else {
-      // MODE TRANSLATE: Gemini 3.0 Pro
+      // MODE TRANSLATE: Gemini 2.5 Flash (Better quota for free tier)
       // contextOrInstruction here is the "Fixed Profile + Dynamic Context" string.
       
       const fullPrompt = `
@@ -55,7 +55,7 @@ ${text}
       `.trim();
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview", 
+        model: "gemini-2.5-flash", 
         contents: [
           {
             role: "user",
@@ -66,8 +66,7 @@ ${text}
           systemInstruction: SYSTEM_INSTRUCTION,
           temperature: 0.8,
           topK: 64,
-          topP: 0.95,
-          thinkingConfig: { thinkingBudget: 16384 }
+          topP: 0.95
         }
       });
 

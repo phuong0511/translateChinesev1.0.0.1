@@ -20,13 +20,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onLogout }) => {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-3 py-2 bg-stone-100 dark:bg-stone-800 rounded-lg hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
       >
-        {user.picture && (
-          <img
-            src={user.picture}
-            alt={user.name}
-            className="w-6 h-6 rounded-full"
-          />
-        )}
         <span className="text-sm font-medium text-stone-900 dark:text-white">
           {user.name}
         </span>
@@ -42,9 +35,11 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onLogout }) => {
             <p className="text-xs text-stone-600 dark:text-stone-400">
               {user.email}
             </p>
-            <p className="text-xs text-stone-500 dark:text-stone-500 mt-1">
-              {user.provider === 'google' ? 'Google' : 'Microsoft'}
-            </p>
+            {user.provider && (
+              <p className="text-xs text-stone-500 dark:text-stone-500 mt-1">
+                {user.provider === 'google' ? 'Google' : 'Microsoft'}
+              </p>
+            )}
           </div>
 
           {/* Logout Button */}

@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FileText, Languages, Sparkles, Users, RefreshCw, Loader2, 
-  XCircle, History, Search, Plus, Settings, Save, Trash2, Moon, Sun 
+  XCircle, History, Search, Plus, Settings, Save, Trash2, Moon, Sun, Eye, Edit3 
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { debounce } from 'lodash';
 import { translateText } from '../services/geminiService';
 import { useTheme } from '../contexts/ThemeContext';
+import { AuthUser } from '../services/authService';
+import databaseService from '../services/firebaseService';
+import { Novel, DynamicContext } from '../database.schema';
 
 // --- TYPES ---
 interface ContextVersion {
@@ -14,46 +19,28 @@ interface ContextVersion {
   label: string;
 }
 
-interface NovelProject {
-  id: string;
-  title: string;
-  fixedProfile: string; // Hồ sơ cố định (Thay thế file database cũ)
-  contextNotes: string; // Context động hiện tại
-  history: ContextVersion[];
-  lastUpdated: number;
-}
-
 enum TranslationStatus {
   IDLE = 'idle',
   LOADING = 'loading',
   ERROR = 'error'
 }
 
-// --- DEFAULT DATA (Dữ liệu mẫu cho truyện đầu tiên) ---
-const DEFAULT_NOVEL: NovelProject = {
-  id: 'default_novel',
-  title: 'Loạn Thế Hoang Niên (Giang Trần)',
-  fixedProfile: `*** HỒ SƠ NHÂN VẬT CỐ ĐỊNH ***
-1. Giang Trần (Main): Xưng "Ta" (nội tâm), "Hắn" (kể chuyện). Gọi chị dâu là "Đại tẩu".
-2. Giang Điền (Anh): Gọi là Đại ca.
-3. Tôn Kim Mai (Phản diện): Gọi là Mụ/Bà ta.
-4. Trần Hoa (Phản diện): Gọi là Ả/Thị.
-5. Quy tắc khác: Văn phong cổ trang, điền văn, hạn chế từ hiện đại.`,
-  contextNotes: '',
-  history: [],
-  lastUpdated: Date.now()
-};
+interface TranslationAreaProps {
+    user: AuthUser;
+}
 
-const TranslationArea: React.FC = () => {
+const TranslationArea: React.FC<TranslationAreaProps> = ({ user }) => {
   const { theme, toggleTheme } = useTheme();
   
   // --- STATE QUẢN LÝ TRUYỆN ---
-  const [novels, setNovels] = useState<NovelProject[]>([]);
+  const [novels, setNovels] = useState<Novel[]>([]);
   const [currentNovelId, setCurrentNovelId] = useState<string>('');
   const [isProfileOpen, setIsProfileOpen] = useState(false); // Modal chỉnh sửa hồ sơ cố định
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Modal hướng dẫn sử dụng
   const [isNewNovelOpen, setIsNewNovelOpen] = useState(false); // Modal tạo truyện mới
   const [newNovelTitle, setNewNovelTitle] = useState(''); // Input tên truyện mới
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [dynamicContext, setDynamicContext] = useState<DynamicContext | null>(null);
   
   // Các State UI cơ bản
   const [inputText, setInputText] = useState('');
@@ -64,86 +51,135 @@ const TranslationArea: React.FC = () => {
   // Review Mode States
   const [pendingContext, setPendingContext] = useState<string | null>(null);
   const [changeLog, setChangeLog] = useState<string>('');
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   // Search States
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{line: string, index: number}[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [isEditingReview, setIsEditingReview] = useState(false); // Toggle between preview and edit mode in review
+  
+  // --- DEFAULT DATA (Dữ liệu mẫu cho truyện đầu tiên) ---
+const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'updatedAt'> => ({
+  title: 'Loạn Thế Hoang Niên (Bắt đầu)',
+  originalTitle: 'Loạn Thế Hoang Niên',
+  slug: 'loan-the-hoang-nien',
+  author: 'Unknown',
+  translator: userId,
+  genres: [],
+  description: 'Một bộ truyện mới được tạo.',
+  status: 'ongoing',
+  rating: 0,
+  viewCount: 0,
+  chapterCount: 0,
+  fixedProfile: `*** HỒ SƠ NHÂN VẬT CỐ ĐỊNH ***
+1. Giang Trần (Main): Xưng "Ta" (nội tâm), "Hắn" (kể chuyện). Gọi chị dâu là "Đại tẩu".
+2. Giang Điền (Anh): Gọi là Đại ca.
+3. Tôn Kim Mai (Phản diện): Gọi là Mụ/Bà ta.
+4. Trần Hoa (Phản diện): Gọi là Ả/Thị.
+5. Quy tắc khác: Văn phong cổ trang, điền văn, hạn chế từ hiện đại.`,
+  contextNotes: '',
+  history: [],
+});
 
   // --- INIT DATA ---
   useEffect(() => {
-    const savedNovels = localStorage.getItem('my_novels');
-    if (savedNovels) {
-      try {
-        const parsed = JSON.parse(savedNovels);
-        setNovels(parsed);
-        if (parsed.length > 0) {
-          setCurrentNovelId(parsed[0].id);
-        } else {
-            setNovels([DEFAULT_NOVEL]);
-            setCurrentNovelId(DEFAULT_NOVEL.id);
+    const fetchNovels = async () => {
+        setIsLoadingData(true);
+        try {
+            const userNovels = await databaseService.getNovelsByUserId(user.id);
+            if (userNovels.length > 0) {
+                setNovels(userNovels);
+                setCurrentNovelId(userNovels[0].id);
+                const latestContext = await databaseService.getLatestContextByNovelId(userNovels[0].id);
+                setDynamicContext(latestContext);
+            } else {
+                // Nếu chưa có, tạo truyện mặc định
+                const defaultNovelData = createDefaultNovel(user.id);
+                const newNovelId = Date.now().toString();
+                const newNovel: Novel = {
+                    ...defaultNovelData,
+                    id: newNovelId,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                };
+                await databaseService.createNovel(newNovel);
+                setNovels([newNovel]);
+                setCurrentNovelId(newNovel.id);
+            }
+        } catch (error) {
+            console.error("Failed to fetch or create novels:", error);
+            setErrorMessage("Không thể tải hoặc tạo truyện.");
+        } finally {
+            setIsLoadingData(false);
         }
-      } catch (e) {
-         setNovels([DEFAULT_NOVEL]);
-         setCurrentNovelId(DEFAULT_NOVEL.id);
-      }
-    } else {
-      // Nếu chưa có, tạo truyện mặc định
-      setNovels([DEFAULT_NOVEL]);
-      setCurrentNovelId(DEFAULT_NOVEL.id);
-    }
-  }, []);
+    };
+
+    fetchNovels();
+  }, [user.id]);
 
   // --- HELPERS: Lấy truyện hiện tại ---
-  const currentNovel = novels.find(n => n.id === currentNovelId) || novels[0] || DEFAULT_NOVEL;
+  const currentNovel = novels.find(n => n.id === currentNovelId);
+
+  // --- DEBOUNCED UPDATE ---
+  const debouncedUpdate = useCallback(
+    debounce((novelId: string, updates: Partial<Novel>) => {
+      databaseService.updateNovel(novelId, updates);
+    }, 1000),
+    []
+  );
 
   // --- ACTION: Lưu dữ liệu truyện ---
-  const updateCurrentNovel = (updates: Partial<NovelProject>) => {
+  const updateCurrentNovel = (updates: Partial<Novel>) => {
     setNovels(prev => {
       const newNovels = prev.map(n => 
-        n.id === currentNovelId ? { ...n, ...updates, lastUpdated: Date.now() } : n
+        n.id === currentNovelId ? { ...n, ...updates, updatedAt: Date.now() } : n
       );
-      localStorage.setItem('my_novels', JSON.stringify(newNovels));
       return newNovels;
     });
+    if (currentNovelId) {
+        debouncedUpdate(currentNovelId, updates);
+    }
   };
 
   // --- ACTION: Tạo truyện mới ---
-  const createNewNovel = () => {
+  const createNewNovel = async () => {
     if (!newNovelTitle.trim()) return;
 
-    const newNovel: NovelProject = {
+    const newNovelData = createDefaultNovel(user.id);
+    const newNovel: Novel = {
+      ...newNovelData,
       id: Date.now().toString(),
       title: newNovelTitle,
       fixedProfile: `*** HỒ SƠ NHÂN VẬT CỐ ĐỊNH - ${newNovelTitle.toUpperCase()} ***\n(Hãy nhập thông tin nhân vật chính, các quy tắc xưng hô vào đây...)`,
-      contextNotes: '',
-      history: [],
-      lastUpdated: Date.now()
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     };
 
-    setNovels(prev => {
-      const updated = [...prev, newNovel];
-      localStorage.setItem('my_novels', JSON.stringify(updated));
-      return updated;
-    });
+    await databaseService.createNovel(newNovel);
+    setNovels(prev => [...prev, newNovel]);
     setCurrentNovelId(newNovel.id);
     setNewNovelTitle('');
     setIsNewNovelOpen(false);
   };
 
   // --- ACTION: Xóa truyện ---
-  const deleteNovel = () => {
+  const deleteNovel = async () => {
     if (novels.length <= 1) return alert("Không thể xóa truyện cuối cùng!");
+    if (!currentNovel) return;
     if (!confirm(`Bạn chắc chắn muốn xóa truyện "${currentNovel.title}"? Dữ liệu sẽ mất vĩnh viễn.`)) return;
 
-    setNovels(prev => {
-      const updated = prev.filter(n => n.id !== currentNovelId);
-      localStorage.setItem('my_novels', JSON.stringify(updated));
-      // Chuyển về truyện đầu tiên còn lại
-      if (updated.length > 0) setCurrentNovelId(updated[0].id);
-      return updated;
-    });
+    await databaseService.deleteNovel(currentNovel.id);
+    const updatedNovels = novels.filter(n => n.id !== currentNovelId);
+    setNovels(updatedNovels);
+    
+    if (updatedNovels.length > 0) {
+      setCurrentNovelId(updatedNovels[0].id);
+    } else {
+        setCurrentNovelId('');
+    }
     setIsSettingsOpen(false);
   };
 
@@ -162,21 +198,26 @@ const TranslationArea: React.FC = () => {
   };
 
   const restoreVersion = (version: ContextVersion) => {
+     if (!currentNovel) return;
     if (confirm(`Khôi phục context từ ${new Date(version.timestamp).toLocaleString('vi-VN')}?`)) {
-      updateCurrentNovel({ contextNotes: version.content });
+        if(dynamicContext) {
+            const newContext = {...dynamicContext, context: version.content};
+            setDynamicContext(newContext);
+            databaseService.updateContext(dynamicContext.id, { context: version.content });
+        }
       setShowHistory(false);
     }
   };
 
   // --- SEARCH LOGIC ---
   useEffect(() => {
-    if (!searchQuery.trim()) { setSearchResults([]); return; }
-    const lines = currentNovel.contextNotes.split('\n');
+    if (!currentNovel || !searchQuery.trim() || !dynamicContext) { setSearchResults([]); return; }
+    const lines = dynamicContext.context.split('\n');
     const results = lines
       .map((line, index) => ({ line, index }))
       .filter(({ line }) => line.toLowerCase().includes(searchQuery.toLowerCase()));
     setSearchResults(results);
-  }, [searchQuery, currentNovel.contextNotes]);
+  }, [searchQuery, currentNovel, dynamicContext]);
 
   const highlightText = (text: string, query: string) => {
     if (!query.trim()) return text;
@@ -233,7 +274,9 @@ const TranslationArea: React.FC = () => {
       }
       setStatus(TranslationStatus.IDLE);
     } catch (error: any) {
-      setErrorMessage(error.message || 'Lỗi phân tích');
+      let msg = error.message || 'Lỗi phân tích';
+      if (msg.includes('API key') || msg.includes('400')) msg = 'Lỗi API Key: Kiểm tra file .env.local';
+      setErrorMessage(msg);
       setStatus(TranslationStatus.ERROR);
     }
   };
@@ -250,29 +293,135 @@ const TranslationArea: React.FC = () => {
         ${currentNovel.fixedProfile}
         
         **NGỮ CẢNH CẬP NHẬT TỪ NGƯỜI DÙNG:**
-        ${currentNovel.contextNotes}
+        ${dynamicContext?.context}
       `;
       
       const translated = await translateText(inputText, finalPrompt, 'translate'); 
       setOutputText(translated);
       setStatus(TranslationStatus.IDLE);
     } catch (error: any) {
-      setErrorMessage(error.message || 'Lỗi dịch thuật');
+      let msg = error.message || 'Lỗi dịch thuật';
+      if (msg.includes('API key') || msg.includes('400')) msg = 'Lỗi API Key: Kiểm tra file .env.local';
+      setErrorMessage(msg);
       setStatus(TranslationStatus.ERROR);
     }
   };
 
-  const confirmUpdate = () => {
-    if (pendingContext !== null) {
-      updateCurrentNovel({ contextNotes: pendingContext });
+  const confirmUpdate = async () => {
+    if (pendingContext !== null && currentNovel) {
+        const newContext: Omit<DynamicContext, 'id' | 'createdAt' | 'updatedAt'> = {
+            chapterId: '', // No chapters yet
+            novelId: currentNovel.id,
+            type: 'plot_point',
+            originalText: inputText,
+            context: pendingContext,
+            importance: 'medium',
+            createdBy: user.id
+        };
+        const newContextId = Date.now().toString();
+        await databaseService.createContext({ ...newContext, id: newContextId });
+        setDynamicContext({ ...newContext, id: newContextId, createdAt: Date.now(), updatedAt: Date.now() });
       saveToHistory(pendingContext, 'Cập nhật AI');
       setPendingContext(null);
       setChangeLog('');
+      setIsReviewModalOpen(false);
     }
+  };
+
+  if (isLoadingData || !currentNovel) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-stone-50 dark:bg-stone-950">
+            <p className="text-lg text-stone-700 dark:text-stone-300">Đang tải dữ liệu truyện...</p>
+        </div>
+    );
+  }
+
+  // Review Modal Component
+  const ReviewModal = () => {
+    if (!isReviewModalOpen || !pendingContext) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="bg-white dark:bg-slate-800 w-full max-w-4xl rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
+          {/* Header */}
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
+            <h3 className="font-bold text-lg flex items-center gap-2 text-slate-800 dark:text-slate-200">
+              <RefreshCw size={20} className="text-blue-500"/> Review Changes
+            </h3>
+            <button onClick={() => {setIsReviewModalOpen(false); setPendingContext(null); setChangeLog('');}} className="text-slate-400 hover:text-red-500 transition-colors" title="Close"><XCircle size={24} /></button>
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 overflow-hidden min-h-0">
+            {/* Left: Changelog */}
+            <div className="flex flex-col bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">📋 Log Thay Đổi</div>
+              <div className="flex-1 p-4 overflow-y-auto custom-scrollbar text-xs font-mono space-y-1">
+                {changeLog.split('\n').map((line, i) => (
+                  <div key={i} className={`mb-1 ${line.includes('MỚI') ? 'text-green-600 dark:text-green-400 font-bold' : line.includes('XÓA') ? 'text-red-500 dark:text-red-400 line-through opacity-70' : 'text-slate-600 dark:text-slate-400'}`}>{line}</div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Right: Preview/Edit */}
+            <div className="flex flex-col bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex justify-between items-center">
+                <span>✏️ Content</span>
+                <button 
+                  onClick={() => setIsEditingReview(!isEditingReview)}
+                  className={`text-xs px-2 py-1 rounded font-medium transition-colors ${isEditingReview ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                >
+                  {isEditingReview ? '👁️ Preview' : '✏️ Edit'}
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-hidden">
+                {isEditingReview ? (
+                  <textarea 
+                    className="w-full h-full p-4 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 resize-none outline-none font-mono text-sm focus:ring-1 ring-indigo-400 border-0 custom-scrollbar" 
+                    value={pendingContext} 
+                    onChange={e => setPendingContext(e.target.value)} 
+                    title="Chỉnh sửa nội dung context"
+                  />
+                ) : (
+                  <div className="p-4 overflow-y-auto custom-scrollbar text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <ReactMarkdown
+                      components={{
+                        strong: ({node, ...props}) => <span className="text-amber-600 dark:text-amber-400 font-bold" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc list-inside space-y-1" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-2" {...props} />,
+                      }}
+                    >
+                      {pendingContext}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Footer */}
+          <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3">
+            <button 
+              onClick={() => {setIsReviewModalOpen(false); setPendingContext(null); setChangeLog('');}} 
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg font-bold transition-colors"
+            >
+              Hủy
+            </button>
+            <button 
+              onClick={confirmUpdate} 
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/30 transition-colors active:scale-95"
+            >
+              ✅ Áp Dụng
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 dark:from-slate-900 dark:to-slate-950 p-2 md:p-6 font-sans flex flex-col">
+      <ReviewModal />
       <div className="max-w-[1600px] mx-auto w-full h-full flex flex-col flex-1">
         
         {/* === HEADER & NOVEL SELECTOR === */}
@@ -286,7 +435,9 @@ const TranslationArea: React.FC = () => {
             {/* Novel Selector */}
             <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
               <span className="text-xs font-semibold text-slate-500 px-2 uppercase tracking-wide">Truyện:</span>
+              <label htmlFor="novel-select" className="sr-only">Chọn truyện</label>
               <select 
+                id="novel-select"
                 value={currentNovelId}
                 onChange={(e) => setCurrentNovelId(e.target.value)}
                 title="Chọn truyện"
@@ -484,6 +635,8 @@ const TranslationArea: React.FC = () => {
                  <span className="text-xs text-slate-400 font-mono">{inputText.length} ký tự</span>
                </div>
                <textarea
+                 aria-label="Văn bản gốc (Raw)"
+                 title="Văn bản gốc (Raw)"
                  className="flex-1 w-full bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 text-sm outline-none resize-none text-slate-800 dark:text-slate-200 border border-slate-100 dark:border-slate-700 focus:border-indigo-400 dark:focus:border-indigo-500 transition-colors custom-scrollbar"
                  placeholder="Paste chương truyện tiếng Trung vào đây..."
                  value={inputText}
@@ -509,6 +662,10 @@ const TranslationArea: React.FC = () => {
                       <button onClick={() => {setShowHistory(!showHistory); setShowSearch(false)}} className={`p-1.5 rounded transition-colors ${showHistory ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400'}`} title="Lịch sử"><History size={14}/></button>
                     </div>
                   )}
+                  
+                  {pendingContext && (
+                    <button onClick={() => setIsReviewModalOpen(true)} className="px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs font-bold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors">👁️ Review</button>
+                  )}
 
                   {pendingContext && (
                     <div className="flex gap-2">
@@ -527,24 +684,29 @@ const TranslationArea: React.FC = () => {
                    </div>
                    <div className="max-h-24 overflow-y-auto custom-scrollbar space-y-1">
                       {searchResults.length === 0 && <p className="text-slate-400 italic text-center">Không tìm thấy.</p>}
-                      {searchResults.map((r, i) => <div key={i} className="truncate p-1.5 bg-white dark:bg-slate-800 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer text-slate-700 dark:text-slate-300 border border-transparent hover:border-indigo-200">{r.line}</div>)}
+                   <ul className="space-y-1">
+                     {searchResults.map((r, i) => <li key={i} className="truncate p-1.5 bg-white dark:bg-slate-800 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer text-slate-700 dark:text-slate-300 border border-transparent hover:border-indigo-200">{r.line}</li>)}
+                   </ul>
                    </div>
                  </div>
                )}
                
                {showHistory && !pendingContext && (
-                 <div className="mb-2 bg-slate-50 dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 text-xs max-h-40 overflow-y-auto custom-scrollbar animate-fade-in">
-                   {currentNovel.history.length === 0 && <div className="text-slate-400 italic text-center py-2">Chưa có lịch sử.</div>}
-                   {currentNovel.history.map(v => (
-                     <div key={v.id} className="flex justify-between items-center p-2 hover:bg-white dark:hover:bg-slate-800 cursor-pointer group rounded border border-transparent hover:border-slate-200 dark:hover:border-slate-700 mb-1" onClick={() => restoreVersion(v)}>
-                       <div className="flex flex-col">
-                          <span className="font-bold text-indigo-600 dark:text-indigo-400">{v.label}</span>
-                          <span className="text-[10px] text-slate-400">{new Date(v.timestamp).toLocaleString()}</span>
-                       </div>
-                       <span className="opacity-0 group-hover:opacity-100 text-indigo-600 dark:text-indigo-400 font-bold text-[10px] bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded">Khôi phục</span>
-                     </div>
-                   ))}
-                 </div>
+                 <ul className="mb-2 bg-slate-50 dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 text-xs max-h-40 overflow-y-auto custom-scrollbar animate-fade-in">
+                   {currentNovel.history.length === 0 ? (
+                     <li className="text-slate-400 italic text-center py-2">Chưa có lịch sử.</li>
+                   ) : (
+                     currentNovel.history.map(v => (
+                       <li key={v.id} className="flex justify-between items-center p-2 hover:bg-white dark:hover:bg-slate-800 cursor-pointer group rounded border border-transparent hover:border-slate-200 dark:hover:border-slate-700 mb-1" onClick={() => restoreVersion(v)}>
+                         <div className="flex flex-col">
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400">{v.label}</span>
+                            <span className="text-[10px] text-slate-400">{new Date(v.timestamp).toLocaleString()}</span>
+                         </div>
+                         <span className="opacity-0 group-hover:opacity-100 text-indigo-600 dark:text-indigo-400 font-bold text-[10px] bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded">Khôi phục</span>
+                       </li>
+                     ))
+                   )}
+                 </ul>
                )}
 
                {/* Editor Area */}
@@ -556,21 +718,82 @@ const TranslationArea: React.FC = () => {
                         <div key={i} className={`mb-0.5 ${line.includes('MỚI') ? 'text-green-600 dark:text-green-400 font-bold' : line.includes('XÓA') ? 'text-red-500 dark:text-red-400 line-through opacity-70' : 'text-slate-600 dark:text-slate-400'}`}>{line}</div>
                      ))}
                    </div>
-                   <textarea 
-                      title="Nội dung hồ sơ được cập nhật"
-                      className="bg-white dark:bg-slate-900 p-2 rounded resize-none text-xs outline-none border border-orange-300 dark:border-orange-700 focus:ring-1 ring-orange-400 text-slate-800 dark:text-slate-200 custom-scrollbar" 
-                      value={pendingContext} 
-                      onChange={e => setPendingContext(e.target.value)} 
-                      placeholder="Hồ sơ cố định sau cập nhật"
-                   />
+                   
+                   {/* RIGHT COLUMN - Toggle between Preview and Edit */}
+                   <div className="flex flex-col gap-2 overflow-hidden min-h-0">
+                     {/* Toggle Button */}
+                     <div className="flex justify-end shrink-0">
+                       <button 
+                         onClick={() => setIsEditingReview(!isEditingReview)}
+                         className={`text-xs px-3 py-1.5 rounded font-medium transition-colors flex items-center gap-1 ${
+                           isEditingReview 
+                             ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                             : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                         }`}
+                       >
+                         {isEditingReview ? (
+                           <>
+                             <Eye size={14} /> Xem đẹp
+                           </>
+                         ) : (
+                           <>
+                             <Edit3 size={14} /> Chỉnh sửa
+                           </>
+                         )}
+                       </button>
+                     </div>
+
+                     {/* Content Area */}
+                     {isEditingReview ? (
+                       // EDIT MODE - Raw textarea
+                       <textarea 
+                          title="Nội dung hồ sơ được cập nhật"
+                          className="flex-1 bg-white dark:bg-slate-900 p-2 rounded resize-none text-xs outline-none border border-orange-300 dark:border-orange-700 focus:ring-1 ring-orange-400 text-slate-800 dark:text-slate-200 custom-scrollbar font-mono" 
+                          value={pendingContext} 
+                          onChange={e => setPendingContext(e.target.value)} 
+                          placeholder="Hồ sơ cố định sau cập nhật"
+                       />
+                     ) : (
+                       // PREVIEW MODE - Rendered markdown
+                       <div className="flex-1 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded overflow-y-auto border border-orange-200 dark:border-orange-800 custom-scrollbar">
+                         <div className="prose prose-sm prose-invert max-w-none dark:text-slate-300">
+                           <ReactMarkdown
+                             components={{
+                               strong: ({node, ...props}) => <span className="text-amber-600 dark:text-amber-400 font-bold" {...props} />,
+                               em: ({node, ...props}) => <span className="text-slate-500 dark:text-slate-400 italic" {...props} />,
+                               ul: ({node, ...props}) => <ul className="list-disc list-inside space-y-1" {...props} />,
+                               ol: ({node, ...props}) => <ol className="list-decimal list-inside space-y-1" {...props} />,
+                               p: ({node, ...props}) => <p className="text-slate-700 dark:text-slate-300 mb-2 leading-relaxed" {...props} />,
+                               h1: ({node, ...props}) => <h1 className="text-lg font-bold text-amber-700 dark:text-amber-400 my-2" {...props} />,
+                               h2: ({node, ...props}) => <h2 className="text-base font-bold text-amber-700 dark:text-amber-400 my-1.5" {...props} />,
+                               h3: ({node, ...props}) => <h3 className="text-sm font-bold text-amber-700 dark:text-amber-400 my-1" {...props} />,
+                             }}
+                           >
+                             {pendingContext}
+                           </ReactMarkdown>
+                         </div>
+                         <div className="text-center mt-4">
+                           <span className="text-[10px] text-slate-500 dark:text-slate-500 italic">
+                             Bấm "Chỉnh sửa" để sửa lỗi
+                           </span>
+                         </div>
+                       </div>
+                     )}
+                   </div>
                  </div>
                ) : (
                  <textarea 
                    title="Ngữ cảnh của truyện"
                    className="flex-1 bg-slate-50 dark:bg-slate-900/30 rounded-lg p-3 resize-none outline-none text-sm text-slate-700 dark:text-slate-300 custom-scrollbar focus:bg-white dark:focus:bg-slate-900 border border-transparent focus:border-indigo-300 dark:focus:border-slate-600 transition-colors"
                    placeholder="Ngữ cảnh của truyện này... (Ví dụ: Main đang ở Hắc Giác Vực, vừa thăng cấp Đấu Hoàng...)"
-                   value={currentNovel.contextNotes}
-                   onChange={(e) => updateCurrentNovel({ contextNotes: e.target.value })}
+                   value={dynamicContext?.context || ''}
+                   onChange={(e) => {
+                       if(dynamicContext) {
+                           const newContext = {...dynamicContext, context: e.target.value};
+                           setDynamicContext(newContext);
+                           databaseService.updateContext(dynamicContext.id, { context: e.target.value });
+                       }
+                   }}
                  />
                )}
             </div>
@@ -605,26 +828,50 @@ const TranslationArea: React.FC = () => {
           </div>
 
           {/* RIGHT COLUMN: OUTPUT */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 flex flex-col h-full min-h-[500px] overflow-hidden">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 flex flex-col h-full min-h-[500px] max-h-[70vh] overflow-hidden">
             <div className="flex items-center justify-between mb-3 font-bold text-slate-700 dark:text-slate-300 shrink-0 border-b border-slate-100 dark:border-slate-700 pb-2">
                <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400"><Languages size={18} /> BẢN DỊCH TIẾNG VIỆT</div>
                {outputText && (
-                 <button onClick={() => navigator.clipboard.writeText(outputText)} className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 px-3 py-1.5 rounded-full text-slate-600 dark:text-slate-300 transition-colors font-medium">
-                   Copy Text
+                 <button 
+                   onClick={() => {
+                     navigator.clipboard.writeText(outputText);
+                     setCopyFeedback(true);
+                     setTimeout(() => setCopyFeedback(false), 2000);
+                   }} 
+                   className={`text-xs px-3 py-1.5 rounded-full transition-colors font-medium ${copyFeedback ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}`}
+                 >
+                   {copyFeedback ? '✅ Copied!' : 'Copy Text'}
                  </button>
                )}
             </div>
-            <div className="flex-1 bg-[#fdfbf7] dark:bg-[#1a1816] rounded-lg p-4 md:p-6 overflow-y-auto custom-scrollbar prose prose-sm max-w-none dark:text-slate-300 prose-p:my-2 prose-headings:text-red-800 dark:prose-headings:text-red-400 font-vietnamese leading-relaxed text-justify shadow-inner">
+            <div className="flex-1 bg-[#fdfbf7] dark:bg-[#1a1816] rounded-lg p-4 md:p-6 overflow-y-auto custom-scrollbar max-h-[60vh]">
               {outputText ? (
-                 // Simple rendering: treat double newlines as paragraphs
-                 outputText.split('\n\n').map((para, idx) => {
-                    const isTitle = idx === 0 && para.length < 100; // Heuristic for title
-                    return (
-                        <p key={idx} className={isTitle ? "text-center font-bold text-lg text-red-800 dark:text-red-500 mb-6 uppercase" : ""}>
-                            {para}
-                        </p>
-                    )
-                 })
+                 <div className="space-y-4 font-vietnamese leading-relaxed text-justify">
+                   {(() => {
+                     const parts = outputText.split('\n\n').filter(p => p.trim());
+                     if (parts.length === 0) return null;
+                     
+                     const firstPart = parts[0].trim();
+                     const isTitle = firstPart.length < 150 && !firstPart.includes('...') && !firstPart.includes('Chương');
+                     
+                     return (
+                       <>
+                         {isTitle && (
+                           <h2 className="text-center font-bold text-xl text-red-700 dark:text-red-400 border-b-2 border-red-300 dark:border-red-700 pb-3 mb-6">
+                             {firstPart}
+                           </h2>
+                         )}
+                         <div className="space-y-4 text-slate-700 dark:text-slate-300">
+                           {(isTitle ? parts.slice(1) : parts).map((para, idx) => (
+                             <p key={idx} className="indent-8 leading-relaxed">
+                               {para}
+                             </p>
+                           ))}
+                         </div>
+                       </>
+                     );
+                   })()}
+                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 gap-4">
                   <Sparkles size={48} className="opacity-20" />

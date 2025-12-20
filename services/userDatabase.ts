@@ -32,6 +32,7 @@ class UserDatabase {
   }
 
   emailExists(email: string): boolean {
+    this.loadUsers();
     return this.users.some(u => u.email.toLowerCase() === email.toLowerCase());
   }
 
@@ -62,16 +63,14 @@ class UserDatabase {
   }
 
   loginUser(email: string, password: string): User {
+    this.loadUsers();
     const user = this.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
     if (!user) {
       throw new Error('Email không tồn tại');
     }
-
     if (user.password !== password) {
       throw new Error('Mật khẩu không chính xác');
     }
-
     return user;
   }
 

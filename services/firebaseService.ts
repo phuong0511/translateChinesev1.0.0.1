@@ -14,6 +14,8 @@ import {
   deleteDoc,
   QueryConstraint,
   Timestamp,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import {
@@ -150,6 +152,28 @@ class DatabaseService {
   async getAllNovels(): Promise<Novel[]> {
     const snapshot = await getDocs(collection(db, DATABASE_COLLECTIONS.NOVELS));
     return snapshot.docs.map(doc => doc.data() as Novel);
+  }
+
+  async getNovelsByUserId(userId: string): Promise<Novel[]> {
+    const q = query(
+      collection(db, DATABASE_COLLECTIONS.NOVELS),
+      where('translator', '==', userId)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data() as Novel);
+  }
+
+  async updateNovel(novelId: string, updates: Partial<Novel>) {
+    const novelRef = doc(db, DATABASE_COLLECTIONS.NOVELS, novelId);
+    await updateDoc(novelRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
+  }
+
+  async deleteNovel(novelId: string): Promise<void> {
+    const novelRef = doc(db, DATABASE_COLLECTIONS.NOVELS, novelId);
+    await deleteDoc(novelRef);
   }
 
   // ==================
@@ -289,6 +313,25 @@ class DatabaseService {
     );
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => doc.data() as DynamicContext);
+  }
+
+  async getLatestContextByNovelId(novelId: string): Promise<DynamicContext | null> {
+    const q = query(
+      collection(db, DATABASE_COLLECTIONS.DYNAMIC_CONTEXTS),
+      where('novelId', '==', novelId),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.empty ? null : (snapshot.docs[0].data() as DynamicContext);
+  }
+
+  async updateContext(contextId: string, updates: Partial<DynamicContext>) {
+    const contextRef = doc(db, DATABASE_COLLECTIONS.DYNAMIC_CONTEXTS, contextId);
+    await updateDoc(contextRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
   }
 }
 

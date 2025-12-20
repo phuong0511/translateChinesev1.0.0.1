@@ -50,6 +50,10 @@ export interface Novel {
   chapterCount: number;          // Số chương
   createdAt: number;
   updatedAt: number;
+  // Fields from NovelProject
+  fixedProfile: string;
+  history?: any[];
+  contextNotes?: string;
 }
 
 // ============================================

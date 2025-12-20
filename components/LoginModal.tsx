@@ -31,13 +31,13 @@ const LoginModal: React.FC<LoginModalProps> = ({
     setError(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      const user = authService.login(formData.email, formData.password);
+      const user = await authService.login(formData.email, formData.password);
       onLoginSuccess(user);
       setFormData({ email: '', password: '' });
       onClose();
