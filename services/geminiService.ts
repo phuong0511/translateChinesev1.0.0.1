@@ -8,7 +8,7 @@ const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
  * Unified function for both Translation and Analysis.
  * @param text The input text (chapter content).
  * @param contextOrInstruction For 'translate': The combined profile + context. For 'analyze': The analysis prompt template.
- * @param mode 'translate' uses Pro model with Thinking. 'analyze' uses Flash model for speed.
+ * @param mode 'translate' uses Flash model (balanced). 'analyze' uses Flash model for speed.
  */
 export const translateText = async (
   text: string, 
@@ -19,11 +19,8 @@ export const translateText = async (
 
   try {
     if (mode === 'analyze') {
-      // MODE ANALYZE: Gemini 2.5 Flash
-      // The contextOrInstruction here is the prompt template from TranslationArea.
-      // We assume it contains a placeholder for the text or we append it.
-      // Based on the UI code, the prompt has "(Xem văn bản đầu vào)" or implies the text goes there.
-      // A robust way is to inject the text into the prompt.
+      // MODE ANALYZE: Gemini 2.5 Flash - Quick context extraction
+      // Temperature: 0.3 for factual extraction (less creative)
       
       const fullPrompt = contextOrInstruction.replace('(Xem văn bản đầu vào)', `\n${text.substring(0, 15000)}\n`);
       
@@ -43,8 +40,8 @@ export const translateText = async (
       return response.text || "";
 
     } else {
-      // MODE TRANSLATE: Gemini 2.5 Flash (Better quota for free tier)
-      // contextOrInstruction here is the "Fixed Profile + Dynamic Context" string.
+      // MODE TRANSLATE: Gemini 2.5 Flash (Balanced quality & quota efficiency)
+      // System Instruction applied here for consistent Vietnamese translation style
       
       const fullPrompt = `
 [THÔNG TIN HỒ SƠ & NGỮ CẢNH CỦA TRUYỆN]:

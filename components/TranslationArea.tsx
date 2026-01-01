@@ -183,6 +183,48 @@ const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'u
     setIsSettingsOpen(false);
   };
 
+  // --- ACTION: Sao lưu dữ liệu ra JSON ---
+  const exportData = () => {
+    const dataStr = JSON.stringify(novels, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `backup_truyen_${new Date().toISOString().slice(0,10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    alert("✅ Sao lưu thành công!");
+  };
+
+  // --- ACTION: Khôi phục dữ liệu từ JSON ---
+  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          setNovels(parsed);
+          if (parsed.length > 0) {
+            setCurrentNovelId(parsed[0].id);
+          }
+          alert("✅ Khôi phục dữ liệu thành công!");
+        } else {
+          alert("❌ File không đúng định dạng (phải là mảng truyện)");
+        }
+      } catch (err) {
+        alert("❌ File lỗi, không đọc được!");
+        console.error("Import error:", err);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input
+    event.target.value = '';
+  };
+
   // --- HISTORY LOGIC ---
   const saveToHistory = (content: string, label: string) => {
     const newVersion: ContextVersion = {
@@ -578,14 +620,37 @@ const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'u
                   </div>
                 </div>
               </div>
-              <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-end bg-slate-50 dark:bg-slate-900">
-                <button onClick={() => setIsSettingsOpen(false)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-indigo-500/30 transition-all active:scale-95">
+              <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
+                <div className="flex gap-2">
+                  <button 
+                    onClick={exportData} 
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
+                    title="Xuất tất cả dữ liệu truyện ra file JSON"
+                  >
+                    <Save size={16} /> Sao Lưu
+                  </button>
+                  <label className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-colors cursor-pointer shadow-sm">
+                    <FileText size={16} /> Khôi Phục
+                    <input 
+                      type="file" 
+                      onChange={importData} 
+                      className="hidden" 
+                      accept=".json"
+                      aria-label="Nhập file JSON để khôi phục dữ liệu"
+                      title="Chọn file backup để khôi phục"
+                    />
+                  </label>
+                </div>
+                <button 
+                  onClick={() => setIsSettingsOpen(false)} 
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-indigo-500/30 transition-all active:scale-95"
+                >
                   Đóng
                 </button>
               </div>
             </div>
           </div>
-        )}
+        )}}
 
         {/* === PROFILE MODAL (HỒ SƠ CỐ ĐỊNH EDITOR) === */}
         {isProfileOpen && (
