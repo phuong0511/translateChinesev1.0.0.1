@@ -1,23 +1,17 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import authService from "./services/auth.service";
+import translationService from "./services/translation.service";
+import databaseService from "./services/database.service";
+import { authMiddleware, errorHandler } from "./middleware";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 const NODE_ENV = process.env.NODE_ENV || "development";
-
-// ============================================
-// VALIDATION
-// ============================================
-if (!GEMINI_API_KEY) {
-  console.error("❌ Error: GEMINI_API_KEY is not set in environment variables");
-  process.exit(1);
-}
 
 // ============================================
 // MIDDLEWARE
@@ -65,160 +59,331 @@ app.use(cors(corsOptions));
 // Request logging (development only)
 if (NODE_ENV === "development") {
   app.use((req: Request, res: Response, next: NextFunction) => {
-    console.log(`${req.method} ${req.path}`, req.body);
+    console.log(`${req.method} ${req.path}`);
     next();
   });
 }
 
 // ============================================
-// GEMINI API SETUP
-// ============================================
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-const SAFETY_SETTINGS = [
-  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-];
-
-// System instruction for consistent Vietnamese translation
-const SYSTEM_INSTRUCTION = `
-**ROLE:** Professional Translator of Chinese Web Novels (Xianxia/Huyền Huyễn/Võ Hiệp).
-**TARGET LANGUAGE:** Vietnamese (Văn phong: Dịch thuật, Cổ trang, Hán Việt vừa phải, Mượt mà như tiểu thuyết in ấn).
-
-**CRITICAL RULES (PHẢI TUÂN THỦ):**
-
-1. **ĐỘC LẬP VỚI CONTEXT:**
-   - STRICTLY apply the "FIXED PROFILE" (Hồ sơ cố định) và "DYNAMIC CONTEXT" (Ngữ cảnh động) mà người dùng cung cấp.
-   - Ví dụ: Nếu User ghi "Nhân vật A gọi B là 'Đại ca'", PHẢI dịch là "Đại ca", không được dùng "Anh trai" hay "Huynh".
-
-2. **THUẬT NGỮ DỊCH: HÁN VIỆT VS THUẦN VIỆT**
-   - **Cultivation/Martial Arts Terms (GIỮ HÁN VIỆT):**
-     - 丹田 (Dan Tian) → "Đan điền" (KHÔNG phải "Vùng bụng dưới")
-     - 气 (Qi) → "Linh khí" hoặc "Khí" (tùy context)
-     - 宗门 (Sect) → "Tông môn" (KHÔNG "Môn phái")
-     - 境界 (Level/Realm) → "Cảnh giới"
-     - 功法 (Technique) → "Công pháp"
-     - 渡劫 (Tribulation) → "Vượt kiếp"
-     - 证道 (Ascend) → "Chứng đạo"
-     - 化身 (Clone/Avatar) → "Hóa thân"
-   
-   - **Descriptive/Action (DÙNG TIẾNG VIỆT MƯỢT MỀM):**
-     - "He walked fast" → "Hắn rảo bước nhanh chóng" (thay vì "Hắn đi bộ nhanh")
-     - "Her face turned cold" → "Nàng khuôn mặt trở nên lạnh lùng"
-     - "With a flash of light" → "Một tia sáng chớp thoáng"
-
-3. **XƯNG HÔ & CHỈ NGƯỜI VẬT:**
-   - **Narrative (Kể chuyện):**
-     - Nam chính → "Hắn" (hoặc tên nhân vật)
-     - Nữ nhân vật tích cực → "Nàng"
-     - Nhân vật trung lập/nam phụ → "Y" hoặc tên
-     - Người lão/cao tuổi → "Lão"
-     - Kẻ thù/tác nhân → "Gã"
-   
-   - **Nội tâm (Internal Monologue):** Sử dụng "Ta"
-   - **Đối thoại (Dialogue):** Phản ánh mối quan hệ, địa vị
-
-4. **ĐỊNH DẠNG (FORMAT):**
-   - Giữ nguyên xuống dòng.
-   - Đối thoại PHẢI nằm trong " ... " (Smart quotes).
-   - KHÔNG thêm ghi chú giải thích như "(T/N: ...)" vào giữa văn bản.
-   - Nếu input là Title chương, định dạng: "**Chương [X]: [Tên Chương]**"
-
-5. **PHONG CÁCH OUTPUT:**
-   - Dịch như một người kể chuyện chuyên nghiệp.
-   - TRÁNH "Machine Translation feel" (cứng nhắc).
-   - Làm cho nó nghe như một cuốn tiểu thuyết xuất bản.
-   - Giữ nhịp điệu, cảm xúc của bản gốc.
-
-**ALWAYS OUTPUT ONLY THE TRANSLATED TEXT. NO NOTES, NO EXPLANATIONS.**
-`;
-
-// ============================================
-// API ROUTES
+// API ROUTES - AUTH
 // ============================================
 
 /**
- * POST /api/translate
- * Translates Chinese text to Vietnamese
+ * POST /api/auth/register
+ * Register new user
  */
-app.post("/api/translate", async (req: Request, res: Response) => {
+app.post("/api/auth/register", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, name, password } = req.body;
+
+    if (!email || !name || !password) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const result = await authService.register(email, name, password);
+    res.status(201).json(result);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/login
+ * Login user
+ */
+app.post("/api/auth/login", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Missing email or password" });
+    }
+
+    const result = await authService.login(email, password);
+    res.json(result);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/auth/verify
+ * Verify JWT token
+ */
+app.get("/api/auth/verify", authMiddleware, (req: Request, res: Response) => {
+  res.json({ user: req.user });
+});
+
+// ============================================
+// API ROUTES - TRANSLATION
+// ============================================
+
+/**
+ * POST /api/translation/translate
+ * Translate Chinese text to Vietnamese
+ */
+app.post("/api/translation/translate", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { text, context, mode } = req.body;
 
-    // Validation
-    if (!text || typeof text !== "string") {
-      return res.status(400).json({ error: "Missing or invalid 'text' parameter" });
-    }
-
-    if (!context || typeof context !== "string") {
-      return res.status(400).json({ error: "Missing or invalid 'context' parameter" });
-    }
-
-    if (!mode || !["translate", "analyze"].includes(mode)) {
-      return res.status(400).json({ error: "Missing or invalid 'mode' parameter (must be 'translate' or 'analyze')" });
-    }
-
-    // Limit text length to prevent abuse
-    const MAX_TEXT_LENGTH = 50000;
-    if (text.length > MAX_TEXT_LENGTH) {
-      return res.status(400).json({ error: `Text too long (max ${MAX_TEXT_LENGTH} characters)` });
-    }
-
-    console.log(`📝 Processing ${mode} request, text length: ${text.length}`);
-
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      systemInstruction: mode === "translate" ? SYSTEM_INSTRUCTION : undefined,
+    const result = await translationService.translate({
+      text,
+      context,
+      mode: mode || "translate",
     });
 
-    const generationConfig = {
-      temperature: mode === "analyze" ? 0.3 : 0.8,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: 8192,
+    res.json(result);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+// ============================================
+// API ROUTES - DATABASE
+// ============================================
+
+/**
+ * POST /api/novels
+ * Create new novel
+ */
+app.post("/api/novels", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { title, description, author, genres, fixedProfile } = req.body;
+    const userId = req.user.id;
+
+    const novelId = Date.now().toString();
+    const novel = {
+      id: novelId,
+      userId,
+      title,
+      description,
+      author,
+      genres,
+      fixedProfile,
+      chapterCount: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
 
-    // Build prompt based on mode
-    let finalPrompt = "";
-    if (mode === "analyze") {
-      finalPrompt = `${context}\n\n---\n\nVĂN BẢN CẦN PHÂN TÍCH:\n${text.substring(0, 15000)}`;
-    } else {
-      finalPrompt = `[THÔNG TIN HỒ SƠ & NGỮ CẢNH]:\n${context}\n\n[VĂN BẢN GỐC CẦN DỊCH]:\n${text}`;
-    }
-
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
-      generationConfig,
-      safetySettings: SAFETY_SETTINGS,
-    });
-
-    const translatedText = result.response.text();
-
-    console.log(`✅ Translation complete`);
-    res.json({ translation: translatedText });
-
+    await databaseService.createNovel(novel);
+    res.status(201).json(novel);
   } catch (error: any) {
-    console.error("❌ Translation error:", error);
+    next(error);
+  }
+});
 
-    // Handle specific error types
-    if (error.message?.includes("429")) {
-      return res.status(429).json({ error: "Quota exceeded. Please try again later." });
+/**
+ * GET /api/novels/:novelId
+ * Get novel by ID
+ */
+app.get("/api/novels/:novelId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const novel = await databaseService.getNovelById(req.params.novelId);
+    if (!novel) {
+      return res.status(404).json({ error: "Novel not found" });
     }
+    res.json(novel);
+  } catch (error: any) {
+    next(error);
+  }
+});
 
-    if (error.message?.includes("SAFETY")) {
-      return res.status(400).json({ error: "Content blocked by safety filter" });
-    }
+/**
+ * GET /api/novels
+ * Get all novels for user
+ */
+app.get("/api/novels", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const novels = await databaseService.getNovelsByUserId(req.user.id);
+    res.json(novels);
+  } catch (error: any) {
+    next(error);
+  }
+});
 
-    if (error.message?.includes("API key")) {
-      return res.status(401).json({ error: "Invalid API key" });
-    }
+/**
+ * PUT /api/novels/:novelId
+ * Update novel
+ */
+app.put("/api/novels/:novelId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { novelId } = req.params;
+    const updates = req.body;
 
-    res.status(500).json({ 
-      error: error.message || "Translation failed",
-      details: NODE_ENV === "development" ? error.stack : undefined,
+    await databaseService.updateNovel(novelId, {
+      ...updates,
+      updatedAt: Date.now(),
     });
+
+    const novel = await databaseService.getNovelById(novelId);
+    res.json(novel);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/novels/:novelId
+ * Delete novel
+ */
+app.delete("/api/novels/:novelId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await databaseService.deleteNovel(req.params.novelId);
+    res.json({ success: true });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+// ============================================
+// API ROUTES - CHAPTERS
+// ============================================
+
+/**
+ * POST /api/chapters
+ * Create new chapter
+ */
+app.post("/api/chapters", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { novelId, chapterNumber, title, content } = req.body;
+
+    const chapterId = `${novelId}_${chapterNumber}`;
+    const chapter = {
+      id: chapterId,
+      novelId,
+      chapterNumber,
+      title,
+      content,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await databaseService.createChapter(chapter);
+    res.status(201).json(chapter);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/chapters/:novelId
+ * Get chapters by novel
+ */
+app.get("/api/chapters/:novelId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const chapters = await databaseService.getChaptersByNovel(req.params.novelId);
+    res.json(chapters);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/chapters/:chapterId
+ * Update chapter
+ */
+app.put("/api/chapters/:chapterId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const updates = req.body;
+    await databaseService.updateChapter(req.params.chapterId, {
+      ...updates,
+      updatedAt: Date.now(),
+    });
+
+    const chapter = await databaseService.getChapterById(req.params.chapterId);
+    res.json(chapter);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/chapters/:chapterId
+ * Delete chapter
+ */
+app.delete("/api/chapters/:chapterId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await databaseService.deleteChapter(req.params.chapterId);
+    res.json({ success: true });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+// ============================================
+// API ROUTES - TRANSLATIONS
+// ============================================
+
+/**
+ * POST /api/translations
+ * Create new translation
+ */
+app.post("/api/translations", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { chapterId, novelId, rawText, translatedText } = req.body;
+
+    const translationId = `${chapterId}_${Date.now()}`;
+    const translation = {
+      id: translationId,
+      chapterId,
+      novelId,
+      translatorId: req.user.id,
+      rawText,
+      translatedText,
+      status: "draft" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await databaseService.createTranslation(translation);
+    res.status(201).json(translation);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/translations/:chapterId
+ * Get translations by chapter
+ */
+app.get("/api/translations/:chapterId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const translations = await databaseService.getTranslationsByChapter(req.params.chapterId);
+    res.json(translations);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/translations/:translationId
+ * Update translation
+ */
+app.put("/api/translations/:translationId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const updates = req.body;
+    await databaseService.updateTranslation(req.params.translationId, {
+      ...updates,
+      updatedAt: Date.now(),
+    });
+
+    const translation = await databaseService.getTranslationById(req.params.translationId);
+    res.json(translation);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/translations/:translationId
+ * Delete translation
+ */
+app.delete("/api/translations/:translationId", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await databaseService.deleteTranslation(req.params.translationId);
+    res.json({ success: true });
+  } catch (error: any) {
+    next(error);
   }
 });
 
@@ -240,26 +405,47 @@ app.use((req: Request, res: Response) => {
 // ============================================
 // ERROR HANDLING
 // ============================================
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({ 
-    error: "Internal server error",
-    message: NODE_ENV === "development" ? err.message : "An error occurred",
-  });
-});
+app.use(errorHandler);
 
 // ============================================
 // START SERVER
 // ============================================
 app.listen(PORT, () => {
   console.log(`
-🚀 Backend Server Running
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-URL:       http://localhost:${PORT}
-Health:    http://localhost:${PORT}/health
-API:       POST http://localhost:${PORT}/api/translate
-CORS:      ${FRONTEND_URL}
-ENV:       ${NODE_ENV}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Backend Server Running (Microservice Architecture)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL:              http://localhost:${PORT}
+Health:           http://localhost:${PORT}/health
+Frontend:         ${FRONTEND_URL}
+Environment:      ${NODE_ENV}
+
+📋 API Routes:
+  Authentication:
+    POST   /api/auth/register
+    POST   /api/auth/login
+    GET    /api/auth/verify
+
+  Translation:
+    POST   /api/translation/translate
+
+  Novels:
+    GET    /api/novels
+    POST   /api/novels
+    GET    /api/novels/:novelId
+    PUT    /api/novels/:novelId
+    DELETE /api/novels/:novelId
+
+  Chapters:
+    GET    /api/chapters/:novelId
+    POST   /api/chapters
+    PUT    /api/chapters/:chapterId
+    DELETE /api/chapters/:chapterId
+
+  Translations:
+    GET    /api/translations/:chapterId
+    POST   /api/translations
+    PUT    /api/translations/:translationId
+    DELETE /api/translations/:translationId
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   `);
 });

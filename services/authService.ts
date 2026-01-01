@@ -1,126 +1,83 @@
-// services/authService.ts
+// Auth Service - Using Headless API Architecture
 
-import {
-  getAuth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  User as FirebaseUser,
-} from 'firebase/auth';
-import { auth } from './firebaseService';
-import databaseService from './firebaseService';
+import apiClient from "./apiClient";
 
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  picture?: string;
   provider?: string;
+}
+
+interface AuthResponse {
+  user: AuthUser;
+  token: string;
 }
 
 class AuthService {
   private currentUser: AuthUser | null = null;
+  private storageKey = "current_user";
 
   constructor() {
-    onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
-      if (user) {
-        let appUser = await databaseService.getUserById(user.uid);
-        if (!appUser) {
-          // If user exists in Auth but not in Firestore, create them.
-          const newUser = {
-            id: user.uid,
-            email: user.email!,
-            name: user.displayName || 'New User',
-            role: 'user' as const,
-            isActive: true,
-          };
-          await databaseService.createUser(newUser);
-          this.currentUser = {
-            id: newUser.id,
-            name: newUser.name,
-            email: newUser.email,
-          };
-        } else {
-            this.currentUser = {
-                id: appUser.id,
-                name: appUser.name,
-                email: appUser.email,
-            };
-        }
-      } else {
-        this.currentUser = null;
-      }
-    });
+    this.loadFromStorage();
   }
 
   // Đăng ký tài khoản mới
   async register(email: string, name: string, password: string): Promise<AuthUser> {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
-
-    const newUser = {
-      id: firebaseUser.uid,
-      email: firebaseUser.email!,
-      name: name,
-      role: 'user' as const,
-      isActive: true,
-    };
-    await databaseService.createUser(newUser);
-
-    const authUser: AuthUser = {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-    };
-    this.currentUser = authUser;
-    return authUser;
+    try {
+      const response = (await apiClient.register(email, name, password)) as AuthResponse;
+      const authUser = response.user;
+      this.setUser(authUser, response.token);
+      return authUser;
+    } catch (error) {
+      throw error;
+    }
   }
 
   // Đăng nhập
   async login(email: string, password: string): Promise<AuthUser> {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
-
-    const appUser = await databaseService.getUserById(firebaseUser.uid);
-    if (!appUser) {
-        throw new Error("User not found in database.");
+    try {
+      const response = (await apiClient.login(email, password)) as AuthResponse;
+      const authUser = response.user;
+      this.setUser(authUser, response.token);
+      return authUser;
+    } catch (error) {
+      throw error;
     }
-    
-    const authUser: AuthUser = {
-      id: appUser.id,
-      name: appUser.name,
-      email: appUser.email,
-    };
-    this.currentUser = authUser;
-    return authUser;
+  }
+
+  // Set current user
+  private setUser(user: AuthUser, token: string) {
+    this.currentUser = user;
+    apiClient.setToken(token);
+    localStorage.setItem(this.storageKey, JSON.stringify({ ...user, token }));
+  }
+
+  // Load from storage
+  private loadFromStorage() {
+    const userStr = localStorage.getItem(this.storageKey);
+    if (userStr) {
+      try {
+        const data = JSON.parse(userStr);
+        this.currentUser = {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          provider: data.provider,
+        };
+        if (data.token) {
+          apiClient.setToken(data.token);
+        }
+      } catch (e) {
+        this.currentUser = null;
+      }
+    }
   }
 
   // Get current user
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
   }
-  
-  // Get current user from Auth state
-  observeUser(callback: (user: AuthUser | null) => void): () => void {
-    return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
-      if (user) {
-        const appUser = await databaseService.getUserById(user.uid);
-        if (appUser) {
-          callback({
-            id: appUser.id,
-            name: appUser.name,
-            email: appUser.email,
-          });
-        } else {
-          callback(null);
-        }
-      } else {
-        callback(null);
-      }
-    });
-  }
-
 
   // Check if user is logged in
   isLoggedIn(): boolean {
@@ -128,9 +85,10 @@ class AuthService {
   }
 
   // Logout
-  async logout() {
-    await signOut(auth);
+  logout() {
     this.currentUser = null;
+    apiClient.clearToken();
+    localStorage.removeItem(this.storageKey);
   }
 }
 

@@ -1,14 +1,21 @@
-import { GoogleGenAI } from "@google/genai";
-import { SYSTEM_INSTRUCTION } from "../constants";
+// Translation Service - Using Headless API Architecture
+import apiClient from "./apiClient";
 
-// Backend API URL - points to Node.js server (API key is safe there)
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+export interface TranslateRequest {
+  text: string;
+  context: string;
+  mode: "translate" | "analyze";
+}
+
+export interface TranslateResponse {
+  translation: string;
+}
 
 /**
  * Unified function for both Translation and Analysis.
  * @param text The input text (chapter content).
  * @param contextOrInstruction For 'translate': The combined profile + context. For 'analyze': The analysis prompt template.
- * @param mode 'translate' uses backend with system instruction. 'analyze' uses backend with low temp extraction.
+ * @param mode 'translate' for full translation. 'analyze' for context extraction.
  */
 export const translateText = async (
   text: string, 
@@ -18,30 +25,13 @@ export const translateText = async (
   if (!text.trim()) return "";
 
   try {
-    console.log(`📡 Calling backend: ${BACKEND_URL}/api/translate (mode: ${mode})`);
+    console.log(`🌐 Calling Translation API (mode: ${mode})...`);
     
-    const response = await fetch(`${BACKEND_URL}/api/translate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: text,
-        context: contextOrInstruction,
-        mode: mode,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-      throw new Error(errorData.error || `API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.translation || "";
+    const response = await apiClient.translate(text, contextOrInstruction, mode) as TranslateResponse;
+    return response.translation || "";
 
   } catch (error: any) {
-    console.error("Backend API Error:", error);
+    console.error("❌ Translation API Error:", error);
     throw formatError(error);
   }
 };

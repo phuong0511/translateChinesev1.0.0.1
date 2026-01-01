@@ -21,6 +21,7 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
           <button 
             onClick={onClose}
             className="text-stone-500 hover:text-red-700 dark:text-stone-400 dark:hover:text-red-400 transition-colors"
+            aria-label="Đóng"
           >
             <X size={24} />
           </button>
