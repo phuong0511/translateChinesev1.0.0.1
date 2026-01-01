@@ -38,7 +38,7 @@ class TranslationCache:
         """Set cached translation with size management"""
         with self.lock:
             if len(self.cache) >= self.max_size:
-                # Remove oldest entries (FIFO)
+                # Remove oldest entry using insertion order (Python 3.7+ dicts maintain insertion order)
                 oldest_key = next(iter(self.cache))
                 del self.cache[oldest_key]
             self.cache[key] = value
@@ -116,9 +116,10 @@ class ChineseTranslator:
     
     def _translate_internal(self, text: str) -> str:
         """Internal translation logic"""
-        # First try dictionary lookup (fast)
-        if text in self.dictionary:
-            return self.dictionary[text]
+        # First try dictionary lookup (fast) - cache reference to avoid multiple property accesses
+        dictionary = self.dictionary
+        if text in dictionary:
+            return dictionary[text]
         
         # Simulate API call for complex translations
         # In production, this would call a real translation API

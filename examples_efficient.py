@@ -53,9 +53,10 @@ class EfficientTranslator:
             if text in self.cache:
                 return self.cache[text]
         
-        # Perform translation
-        if text in self.dictionary:
-            result = self.dictionary[text]
+        # Perform translation - use dictionary reference once
+        dictionary = self.dictionary
+        if text in dictionary:
+            result = dictionary[text]
         else:
             result = self._call_api(text)
         

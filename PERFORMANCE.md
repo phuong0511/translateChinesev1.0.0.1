@@ -1,11 +1,9 @@
-"""
-Performance Optimization Guide for Chinese Translation
+# Performance Optimization Guide for Chinese Translation
 
 This document outlines the performance optimizations implemented in this application
 and provides guidelines for identifying and fixing slow or inefficient code.
-"""
 
-# PERFORMANCE OPTIMIZATIONS IMPLEMENTED
+## PERFORMANCE OPTIMIZATIONS IMPLEMENTED
 
 ## 1. Caching Strategy (translator.py)
 - LRU-style cache to avoid redundant translations
