@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import authService from "./services/auth.service";
 import translationService from "./services/translation.service";
 import databaseService from "./services/database.service";
-import { authMiddleware, errorHandler } from "./middleware";
+import { authMiddleware, errorHandler, AuthRequest } from "./middleware";
 
 dotenv.config();
 
@@ -110,7 +110,7 @@ app.post("/api/auth/login", async (req: Request, res: Response, next: NextFuncti
  * GET /api/auth/verify
  * Verify JWT token
  */
-app.get("/api/auth/verify", authMiddleware, (req: Request, res: Response) => {
+app.get("/api/auth/verify", authMiddleware, (req: AuthRequest, res: Response) => {
   res.json({ user: req.user });
 });
 
@@ -146,7 +146,7 @@ app.post("/api/translation/translate", authMiddleware, async (req: Request, res:
  * POST /api/novels
  * Create new novel
  */
-app.post("/api/novels", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+app.post("/api/novels", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { title, description, author, genres, fixedProfile } = req.body;
     const userId = req.user.id;
@@ -192,7 +192,7 @@ app.get("/api/novels/:novelId", authMiddleware, async (req: Request, res: Respon
  * GET /api/novels
  * Get all novels for user
  */
-app.get("/api/novels", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+app.get("/api/novels", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const novels = await databaseService.getNovelsByUserId(req.user.id);
     res.json(novels);
@@ -318,7 +318,7 @@ app.delete("/api/chapters/:chapterId", authMiddleware, async (req: Request, res:
  * POST /api/translations
  * Create new translation
  */
-app.post("/api/translations", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+app.post("/api/translations", authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { chapterId, novelId, rawText, translatedText } = req.body;
 

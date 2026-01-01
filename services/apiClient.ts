@@ -84,11 +84,6 @@ class ApiClient {
       password,
     });
   }
-      email,
-      name,
-      password,
-    });
-  }
 
   async login(email: string, password: string) {
     return this.request("/api/auth/login", "POST", {
