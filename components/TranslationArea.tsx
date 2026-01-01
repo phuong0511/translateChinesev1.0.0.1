@@ -650,7 +650,7 @@ const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'u
               </div>
             </div>
           </div>
-        )}}
+        )}
 
         {/* === PROFILE MODAL (HỒ SƠ CỐ ĐỊNH EDITOR) === */}
         {isProfileOpen && (
