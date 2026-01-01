@@ -14,6 +14,22 @@ const App: React.FC = () => {
 
   // Observe user auth state on component mount
   useEffect(() => {
+    // Check if Firebase is properly configured
+    const hasValidFirebaseConfig = import.meta.env.VITE_FIREBASE_API_KEY && 
+                                   !import.meta.env.VITE_FIREBASE_API_KEY.includes('your_');
+    
+    if (!hasValidFirebaseConfig) {
+      // Firebase not configured - use guest mode for testing
+      console.warn('⚠️ Firebase not configured. Using guest mode for testing.');
+      setUser({
+        id: 'guest-user',
+        name: 'Guest',
+        email: 'guest@test.local',
+      });
+      setIsLoading(false);
+      return;
+    }
+
     const unsubscribe = authService.observeUser((user) => {
       setUser(user);
       setIsLoading(false);

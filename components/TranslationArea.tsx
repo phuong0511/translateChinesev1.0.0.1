@@ -89,25 +89,51 @@ const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'u
     const fetchNovels = async () => {
         setIsLoadingData(true);
         try {
-            const userNovels = await databaseService.getNovelsByUserId(user.id);
-            if (userNovels.length > 0) {
-                setNovels(userNovels);
-                setCurrentNovelId(userNovels[0].id);
-                const latestContext = await databaseService.getLatestContextByNovelId(userNovels[0].id);
-                setDynamicContext(latestContext);
+            // Check if in guest mode (Firebase not configured)
+            const isGuestMode = user.id === 'guest-user';
+            
+            if (isGuestMode) {
+                // Guest mode: use localStorage only
+                const stored = localStorage.getItem('guest_novels');
+                const guestNovels = stored ? JSON.parse(stored) : [];
+                
+                if (guestNovels.length > 0) {
+                    setNovels(guestNovels);
+                    setCurrentNovelId(guestNovels[0].id);
+                } else {
+                    const defaultNovelData = createDefaultNovel(user.id);
+                    const newNovel: Novel = {
+                        ...defaultNovelData,
+                        id: Date.now().toString(),
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                    };
+                    setNovels([newNovel]);
+                    setCurrentNovelId(newNovel.id);
+                    localStorage.setItem('guest_novels', JSON.stringify([newNovel]));
+                }
             } else {
-                // Nếu chưa có, tạo truyện mặc định
-                const defaultNovelData = createDefaultNovel(user.id);
-                const newNovelId = Date.now().toString();
-                const newNovel: Novel = {
-                    ...defaultNovelData,
-                    id: newNovelId,
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                };
-                await databaseService.createNovel(newNovel);
-                setNovels([newNovel]);
-                setCurrentNovelId(newNovel.id);
+                // Normal mode: fetch from Firebase
+                const userNovels = await databaseService.getNovelsByUserId(user.id);
+                if (userNovels.length > 0) {
+                    setNovels(userNovels);
+                    setCurrentNovelId(userNovels[0].id);
+                    const latestContext = await databaseService.getLatestContextByNovelId(userNovels[0].id);
+                    setDynamicContext(latestContext);
+                } else {
+                    // Nếu chưa có, tạo truyện mặc định
+                    const defaultNovelData = createDefaultNovel(user.id);
+                    const newNovelId = Date.now().toString();
+                    const newNovel: Novel = {
+                        ...defaultNovelData,
+                        id: newNovelId,
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                    };
+                    await databaseService.createNovel(newNovel);
+                    setNovels([newNovel]);
+                    setCurrentNovelId(newNovel.id);
+                }
             }
         } catch (error) {
             console.error("Failed to fetch or create novels:", error);
@@ -125,14 +151,25 @@ const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'u
 
   // --- DEBOUNCED UPDATE ---
   const debouncedUpdate = useCallback(
-    debounce((novelId: string, updates: Partial<Novel>) => {
-      databaseService.updateNovel(novelId, updates);
+    debounce((novelId: string, updates: Partial<Novel>, isGuestMode: boolean) => {
+      if (isGuestMode) {
+        // Guest mode: save to localStorage
+        const stored = localStorage.getItem('guest_novels');
+        const guestNovels = stored ? JSON.parse(stored) : [];
+        const updated = guestNovels.map((n: Novel) => 
+          n.id === novelId ? { ...n, ...updates } : n
+        );
+        localStorage.setItem('guest_novels', JSON.stringify(updated));
+      } else {
+        databaseService.updateNovel(novelId, updates);
+      }
     }, 1000),
     []
   );
 
   // --- ACTION: Lưu dữ liệu truyện ---
   const updateCurrentNovel = (updates: Partial<Novel>) => {
+    const isGuestMode = user.id === 'guest-user';
     setNovels(prev => {
       const newNovels = prev.map(n => 
         n.id === currentNovelId ? { ...n, ...updates, updatedAt: Date.now() } : n
@@ -140,7 +177,7 @@ const createDefaultNovel = (userId: string): Omit<Novel, 'id' | 'createdAt' | 'u
       return newNovels;
     });
     if (currentNovelId) {
-        debouncedUpdate(currentNovelId, updates);
+        debouncedUpdate(currentNovelId, updates, isGuestMode);
     }
   };
 
