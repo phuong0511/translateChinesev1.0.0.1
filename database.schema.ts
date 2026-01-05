@@ -122,11 +122,30 @@ export interface DynamicContext {
   originalText: string;          // Đoạn văn bản gốc
   translatedText?: string;       // Đoạn dịch
   context: string;               // Giải thích ngữ cảnh
+  structuredContext?: StructuredContext; // Ngữ cảnh chuẩn hóa dạng JSON
   importance: 'low' | 'medium' | 'high'; // Mức độ quan trọng
   notes?: string;                // Ghi chú thêm
   createdAt: number;
   updatedAt: number;
   createdBy: string;             // ID người tạo
+}
+
+// Chuẩn hóa ngữ cảnh dạng JSON để AI dễ bám theo
+export interface StructuredContext {
+  characters: Array<{
+    name: string;
+    role?: string;
+    aliases?: string[];
+    pronouns?: string;
+    relations?: string[];
+    status?: string;
+  }>;
+  locations?: Array<{
+    name: string;
+    detail?: string;
+  }>;
+  tone?: string;
+  plotPoints?: string[];
 }
 
 // ============================================

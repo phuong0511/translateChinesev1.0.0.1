@@ -1,3 +1,6 @@
+/*
+ * Unused modal component (commented out per cleanup request).
+ * Restore this block if a guided tour modal is reintroduced.
 import React from 'react';
 import { X, BookOpen, Search, Send, RotateCcw, CircleHelp } from 'lucide-react';
 
@@ -12,7 +15,6 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-[#fcfaf7] dark:bg-stone-900 w-full max-w-2xl rounded-xl shadow-2xl border border-stone-200 dark:border-stone-700 overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 dark:border-stone-800 bg-[#f3eee7] dark:bg-stone-900/50">
           <h2 className="text-lg font-bold text-red-900 dark:text-red-400 flex items-center gap-2">
             <BookOpen size={20} />
@@ -27,7 +29,6 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 text-stone-700 dark:text-stone-300 text-sm leading-relaxed font-vietnamese custom-scrollbar">
           
           <section>
@@ -42,7 +43,7 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
               <strong className="text-amber-800 dark:text-amber-500 flex items-center gap-1 mb-1">
                 <Search size={14} /> Mẹo: Soi Context
               </strong>
-              Trước khi dịch, hãy bấm nút <strong>"Soi Context"</strong>. AI (Gemini 2.5 Flash) sẽ đọc lướt chương truyện để phát hiện nhân vật mới hoặc tình huống đặc biệt, tự động điền vào ô ngữ cảnh. Điều này giúp bản dịch chính xác hơn về xưng hô (Huynh/Đệ, Ta/Ngươi).
+              Trước khi dịch, hãy bấm nút "Soi Context". AI (Gemini 2.5 Flash) sẽ đọc lướt chương truyện để phát hiện nhân vật mới hoặc tình huống đặc biệt, tự động điền vào ô ngữ cảnh.
             </div>
           </section>
 
@@ -52,10 +53,7 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
                Dịch thuật
             </h3>
             <p>
-              Bấm nút <strong>"Dịch Ngay"</strong> <Send size={12} className="inline"/> để bắt đầu. Hệ thống sử dụng <strong>Gemini 3.0 Pro</strong> với tư duy sâu (Thinking Mode) để văn phong được chau chuốt nhất theo phong cách Cổ đại/Điền văn.
-            </p>
-            <p className="mt-2 text-xs italic text-stone-500">
-              *Lưu ý: Quá trình dịch có thể mất 10-30 giây tùy độ dài chương truyện do AI cần thời gian suy nghĩ.
+              Bấm nút "Dịch Ngay" <Send size={12} className="inline"/> để bắt đầu.
             </p>
           </section>
 
@@ -65,10 +63,8 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
                Chỉnh sửa & Hoàn thiện
             </h3>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Kết quả sẽ hiện ở cột bên phải (Tiêu đề & Nội dung).</li>
-              <li>Bạn có thể <strong>sửa trực tiếp</strong> vào văn bản nếu thấy chưa ưng ý.</li>
-              <li>Nếu lỡ xóa nhầm, bấm nút <strong>"Khôi phục gốc"</strong> <RotateCcw size={12} className="inline"/> để lấy lại bản dịch gốc của AI.</li>
-              <li>Hệ thống tự động lưu nháp vào trình duyệt, bạn sẽ không bị mất bài khi tải lại trang.</li>
+              <li>Kết quả sẽ hiện ở cột bên phải.</li>
+              <li>Bạn có thể sửa trực tiếp vào văn bản nếu thấy chưa ưng ý.</li>
             </ul>
           </section>
 
@@ -77,13 +73,12 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
                 <CircleHelp size={14} /> Lưu ý quan trọng
              </h4>
              <p className="text-xs text-stone-600 dark:text-stone-400">
-               Hệ thống được tối ưu cho truyện <strong>Cổ Trang / Lịch Sử / Điền Văn</strong>. Các thể loại Đô thị hiện đại hoặc Khoa huyễn có thể sẽ bị dịch theo văn phong cổ (dùng từ Hán Việt nhiều).
+               Hệ thống tối ưu cho truyện Cổ Trang / Lịch Sử / Điền Văn.
              </p>
           </div>
 
         </div>
         
-        {/* Footer */}
         <div className="p-4 border-t border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-900 flex justify-end">
            <button 
              onClick={onClose}
@@ -98,3 +93,4 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
 };
 
 export default GuideModal;
+*/

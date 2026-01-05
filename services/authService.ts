@@ -84,8 +84,19 @@ class AuthService {
     return this.currentUser !== null;
   }
 
+  // Observe user - returns unsubscribe function
+  // For headless API architecture, we just check storage and call callback immediately
+  observeUser(callback: (user: AuthUser | null) => void): () => void {
+    // Load from storage and call callback
+    this.loadFromStorage();
+    callback(this.currentUser);
+    
+    // Return empty unsubscribe function (no real-time updates in this architecture)
+    return () => {};
+  }
+
   // Logout
-  logout() {
+  async logout(): Promise<void> {
     this.currentUser = null;
     apiClient.clearToken();
     localStorage.removeItem(this.storageKey);

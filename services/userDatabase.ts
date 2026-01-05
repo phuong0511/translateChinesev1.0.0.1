@@ -1,5 +1,6 @@
-// Simple User Database Service using localStorage
-
+/*
+ * Legacy localStorage user store (commented out per cleanup request).
+ * Keep for reference in case we need an offline-only auth fallback.
 export interface User {
   id: string;
   email: string;
@@ -84,3 +85,4 @@ class UserDatabase {
 }
 
 export default new UserDatabase();
+*/
